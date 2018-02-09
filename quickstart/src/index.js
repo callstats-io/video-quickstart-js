@@ -1,7 +1,7 @@
 'use strict';
 
 var Video = require('twilio-video');
-var callstats = require('callstats-twiliovideojs');
+var callstatsTwilioVideo = require('callstats-twilio-video');
 
 var activeRoom;
 var previewTracks;
@@ -63,6 +63,9 @@ $.getJSON('/token', function(data) {
       connectOptions.tracks = previewTracks;
     }
 
+    var temp = Math.floor(Math.random()*10000);
+    var myUserId = temp.toString();
+    var callstats = callstatsTwilioVideo(null, false, 'appID', 'appSecret', myUserId);
     // Join the Room with the token from the server and the
     // LocalParticipant's Tracks.
     Video.connect(data.token, connectOptions).then(roomJoined, function(error) {
@@ -79,8 +82,7 @@ $.getJSON('/token', function(data) {
 
 // Successfully connected!
 function roomJoined(room) {
-  callstats(room, false, 'api-key', 'api-secret');
-
+  callstatsTwilioVideo.setTwilioVideoRoom(room);
   window.room = activeRoom = room;
 
   log("Joined as '" + identity + "'");
