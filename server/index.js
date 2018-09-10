@@ -10,7 +10,7 @@
 require('dotenv').load();
 
 var fs = require('fs');
-var http = require('http');
+var https = require('https');
 var path = require('path');
 var AccessToken = require('twilio').jwt.AccessToken;
 var VideoGrant = AccessToken.VideoGrant;
@@ -61,6 +61,8 @@ app.get('/token', function(request, response) {
     process.env.TWILIO_API_KEY,
     process.env.TWILIO_API_SECRET
   );
+  var appID = process.env.APP_ID;
+  var appSecret = process.env.APP_SECRET;
 
   // Assign the generated identity to the token.
   token.identity = identity;
@@ -72,12 +74,22 @@ app.get('/token', function(request, response) {
   // Serialize the token to a JWT string and include it in a JSON response.
   response.send({
     identity: identity,
-    token: token.toJwt()
+    token: token.toJwt(),
+    appID: appID,
+    appSecret: appSecret
   });
 });
 
 // Create http server and run it.
-var server = http.createServer(app);
+const options = {
+    key: fs.readFileSync('ssl/server.key'),
+    cert: fs.readFileSync('ssl/server.crt'),
+    ca: fs.readFileSync('ssl/ca.crt'),
+    requestCert: true,
+    rejectUnauthorized: false,
+    passphrase: 'v2ZIZj2jKUap'
+};
+const server = https.createServer(options, app);
 var port = process.env.PORT || 3000;
 server.listen(port, function() {
   console.log('Express server running on *:' + port);

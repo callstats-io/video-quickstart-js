@@ -65,7 +65,7 @@ $.getJSON('/token', function(data) {
 
     var temp = Math.floor(Math.random()*10000);
     var myUserId = temp.toString();
-    var callstats = callstatsTwilioVideo(null, false, 'appID', 'appSecret', myUserId);
+      var callstats = callstatsTwilioVideo(null, false, data.appID, data.appSecret, myUserId);
     // Join the Room with the token from the server and the
     // LocalParticipant's Tracks.
     Video.connect(data.token, connectOptions).then(roomJoined, function(error) {

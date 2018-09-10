@@ -1,0 +1,19 @@
+version: '2'
+services:
+  #########################
+  # CSIO Twilio video SHIM demo application
+  #########################
+
+  twilio-video-shim-demo:
+    build:
+      context: ./../video-quickstart-js
+    environment:
+      TWILIO_ACCOUNT_SID: 'your_account_sid'
+      TWILIO_API_KEY: 'your_api_key'
+      TWILIO_API_SECRET: 'your_api_secret'
+      APP_ID: 'your_app_id'
+      APP_SECRET: 'your_app_secret'
+      PORT: '6060'
+    ports:
+      - "6060:6060"
+    command: "npm start"

@@ -11,6 +11,7 @@
     "build:examples:localvideosnapshot": "copyfiles -f examples/localvideosnapshot/src/helpers.js examples/localvideosnapshot/public && browserify examples/localvideosnapshot/src/index.js > examples/localvideosnapshot/public/index.js",
     "build:examples:mediadevices": "copyfiles -f examples/mediadevices/src/helpers.js examples/mediadevices/public && browserify examples/mediadevices/src/index.js > examples/mediadevices/public/index.js",
     "build:quickstart": "browserify quickstart/src/index.js > quickstart/public/index.js",
+    "build:generatecertificate": "mkdir -p ssl && cd ssl && openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout server.key -out server.crt -passin pass:v2ZIZj2jKUap -subj '/CN=localhost/O=Local/C=FI' && cp server.crt ca.crt",
     "clean": "npm-run-all clean:*",
     "clean:examples": "npm-run-all clean:examples:*",
     "clean:examples:bandwidthconstraints": "rimraf examples/bandwidthconstraints/public/index.js examples/bandwidthconstraints/public/helpers.js",
