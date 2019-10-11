@@ -8,32 +8,58 @@ var previewTracks;
 var identity;
 var roomName;
 
-// Attach the Tracks to the DOM.
+
+// Attach the Track to the DOM.
+function attachTrack(track, container) {
+  container.appendChild(track.attach());
+}
+
+// Attach array of Tracks to the DOM.
 function attachTracks(tracks, container) {
   tracks.forEach(function(track) {
-    container.appendChild(track.attach());
+    attachTrack(track, container);
   });
 }
 
-// Attach the Participant's Tracks to the DOM.
-function attachParticipantTracks(participant, container) {
-  var tracks = Array.from(participant.tracks.values());
-  attachTracks(tracks, container);
+// Detach given track from the DOM
+function detachTrack(track) {
+  track.detach().forEach(function(element) {
+    element.remove();
+  });
 }
 
-// Detach the Tracks from the DOM.
-function detachTracks(tracks) {
-  tracks.forEach(function(track) {
-    track.detach().forEach(function(detachedElement) {
-      detachedElement.remove();
-    });
+// A new RemoteTrack was published to the Room.
+function trackPublished(publication, container) {
+  if (publication.isSubscribed) {
+    attachTrack(publication.track, container);
+  }
+  publication.on('subscribed', function(track) {
+    log('Subscribed to ' + publication.kind + ' track');
+    attachTrack(track, container);
   });
+  publication.on('unsubscribed', detachTrack);
+}
+
+// A RemoteTrack was unpublished from the Room.
+function trackUnpublished(publication) {
+  log(publication.kind + ' track was unpublished.');
+}
+
+// A new RemoteParticipant joined the Room
+function participantConnected(participant, container) {
+  participant.tracks.forEach(function(publication) {
+    trackPublished(publication, container);
+  });
+  participant.on('trackPublished', function(publication) {
+    trackPublished(publication, container);
+  });
+  participant.on('trackUnpublished', trackUnpublished);
 }
 
 // Detach the Participant's Tracks from the DOM.
 function detachParticipantTracks(participant) {
-  var tracks = Array.from(participant.tracks.values());
-  detachTracks(tracks);
+  var tracks = getTracks(participant);
+  tracks.forEach(detachTrack);
 }
 
 // When we are about to transition away from this page, disconnect
@@ -80,6 +106,15 @@ $.getJSON('/token', function(data) {
   };
 });
 
+// Get the Participant's Tracks.
+function getTracks(participant) {
+  return Array.from(participant.tracks.values()).filter(function(publication) {
+    return publication.track;
+  }).map(function(publication) {
+    return publication.track;
+  });
+}
+
 // Successfully connected!
 function roomJoined(room) {
   callstatsTwilioVideo.setTwilioVideoRoom(room);
@@ -92,37 +127,25 @@ function roomJoined(room) {
   // Attach LocalParticipant's Tracks, if not already attached.
   var previewContainer = document.getElementById('local-media');
   if (!previewContainer.querySelector('video')) {
-    attachParticipantTracks(room.localParticipant, previewContainer);
+    attachTracks(getTracks(room.localParticipant), previewContainer);
   }
 
   // Attach the Tracks of the Room's Participants.
+  var remoteMediaContainer = document.getElementById('remote-media');
   room.participants.forEach(function(participant) {
     log("Already in Room: '" + participant.identity + "'");
-    var previewContainer = document.getElementById('remote-media');
-    attachParticipantTracks(participant, previewContainer);
+    participantConnected(participant, remoteMediaContainer);
   });
 
   // When a Participant joins the Room, log the event.
   room.on('participantConnected', function(participant) {
     log("Joining: '" + participant.identity + "'");
-  });
-
-  // When a Participant adds a Track, attach it to the DOM.
-  room.on('trackAdded', function(track, participant) {
-    log(participant.identity + " added track: " + track.kind);
-    var previewContainer = document.getElementById('remote-media');
-    attachTracks([track], previewContainer);
-  });
-
-  // When a Participant removes a Track, detach it from the DOM.
-  room.on('trackRemoved', function(track, participant) {
-    log(participant.identity + " removed track: " + track.kind);
-    detachTracks([track]);
+    participantConnected(participant, remoteMediaContainer);
   });
 
   // When a Participant leaves the Room, detach its Tracks.
   room.on('participantDisconnected', function(participant) {
-    log("Participant '" + participant.identity + "' left the room");
+    log("RemoteParticipant '" + participant.identity + "' left the room");
     detachParticipantTracks(participant);
   });
 
@@ -134,6 +157,7 @@ function roomJoined(room) {
       previewTracks.forEach(function(track) {
         track.stop();
       });
+      previewTracks = null;
     }
     detachParticipantTracks(room.localParticipant);
     room.participants.forEach(detachParticipantTracks);

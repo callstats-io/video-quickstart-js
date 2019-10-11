@@ -17,15 +17,23 @@ var VideoGrant = AccessToken.VideoGrant;
 var express = require('express');
 var randomName = require('./randomname');
 
+// Max. period that a Participant is allowed to be in a Room (currently 14400 seconds or 4 hours)
+const MAX_ALLOWED_SESSION_DURATION = 14400;
+
 // Create Express webapp.
 var app = express();
 
 // Set up the paths for the examples.
 [
   'bandwidthconstraints',
+  'codecpreferences',
+  'dominantspeaker',
   'localvideofilter',
   'localvideosnapshot',
-  'mediadevices'
+  'mediadevices',
+  'networkquality',
+  'reconnection',
+  'screenshare'
 ].forEach(function(example) {
   var examplePath = path.join(__dirname, `../examples/${example}/public`);
   app.use(`/${example}`, express.static(examplePath));
@@ -52,14 +60,15 @@ app.get('/', function(request, response) {
  * parameter.
  */
 app.get('/token', function(request, response) {
-  var identity = randomName();
+  var identity = request.query.identity || randomName();
 
   // Create an access token which we will sign and return to the client,
   // containing the grant we just created.
   var token = new AccessToken(
     process.env.TWILIO_ACCOUNT_SID,
     process.env.TWILIO_API_KEY,
-    process.env.TWILIO_API_SECRET
+    process.env.TWILIO_API_SECRET,
+    { ttl: MAX_ALLOWED_SESSION_DURATION }
   );
   var appID = process.env.APP_ID;
   var appSecret = process.env.APP_SECRET;

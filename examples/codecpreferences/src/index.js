@@ -1,28 +1,23 @@
 'use strict';
 
-const DataSeries = require('../../util/timelinegraph').DataSeries;
-const GraphView = require('../../util/timelinegraph').GraphView;
 const Prism = require('prismjs');
 const Video = require('twilio-video');
 const getRoomCredentials = require('../../util/getroomcredentials');
 const getSnippet = require('../../util/getsnippet');
 const helpers = require('./helpers');
 const waveform = require('../../util/waveform');
-const connectWithBandwidthConstraints = helpers.connectWithBandwidthConstraints;
-const updateBandwidthConstraints = helpers.updateBandwidthConstraints;
+const connectWithPreferredCodecs = helpers.connectWithPreferredCodecs;
 
 const connectOrDisconnect = document.querySelector('input#connectordisconnect');
-const audioBitrateSelector = document.querySelector('select#maxaudiobitrate');
+const audioCodecSelector = document.querySelector('select#preferredaudiocodec');
 const audioPreview = document.querySelector('audio#audiopreview');
-const videoBitrateSelector = document.querySelector('select#maxvideobitrate');
+const selectedAudioCodec = document.querySelector('span#selectedaudiocodec');
+const videoCodecSelector = document.querySelector('select#preferredvideocodec');
 const videoPreview = document.querySelector('video#videopreview');
+const selectedVideoCodec = document.querySelector('span#selectedvideocodec');
 const waveformContainer = document.querySelector('div#audiowaveform');
 let roomName = null;
 let room = null;
-let startAudioBitrateGraph = null;
-let startVideoBitrateGraph = null;
-let stopAudioBitrateGraph = null;
-let stopVideoBitrateGraph = null;
 
 /**
  * Attach the AudioTrack to the HTMLAudioElement and start the Waveform.
@@ -37,16 +32,15 @@ function attachAudioTrack(track, audioElement) {
 }
 
 /**
- * Attach a Track to one of the HTMLMediaElements and start the bitrate graph.
+ * Attach a Track to its HTMLMediaElement.
  */
-function attachTrack(audioElement, videoElement, starAudioBitrateGraph, startVideoBitrateGraph, track) {
+function attachTrack(audioElement, videoElement, showAppliedCodec, track) {
+  showAppliedCodec(track.kind);
   if (track.kind === 'audio') {
     attachAudioTrack(track, audioElement);
-    stopAudioBitrateGraph = starAudioBitrateGraph(1000);
     return;
   }
   track.attach(videoElement);
-  stopVideoBitrateGraph = startVideoBitrateGraph(1000);
 }
 
 /**
@@ -62,16 +56,15 @@ function detachAudioTrack(track, audioElement) {
 }
 
 /**
- * Detach a Track from its HTMLMediaElement and stop the bitrate graph.
+ * Detach a Track from its HTMLMediaElement.
  */
 function detachTrack(audioElement, videoElement, track) {
+  hideAppliedCodec(track.kind);
   if (track.kind === 'audio') {
     detachAudioTrack(track, audioElement);
-    stopAudioBitrateGraph();
     return;
   }
   track.detach(videoElement);
-  stopVideoBitrateGraph();
 }
 
 /**
@@ -86,19 +79,19 @@ function connectToOrDisconnectFromRoom(event) {
  * Connect the Participant with media to the Room.
  */
 async function connectToRoom() {
-  const maxAudioBitrate = audioBitrateSelector.value
-    ? Number(audioBitrateSelector.value)
-    : null;
-  const maxVideoBitrate = videoBitrateSelector.value
-    ? Number(videoBitrateSelector.value)
-    : null;
+  const preferredAudioCodecs = audioCodecSelector.value
+    ? [audioCodecSelector.value]
+    : [];
+  const preferredVideoCodecs = videoCodecSelector.value
+    ? [videoCodecSelector.value]
+    : [];
   const creds = await getRoomCredentials();
 
-  room = await connectWithBandwidthConstraints(
+  room = await connectWithPreferredCodecs(
     creds.token,
     roomName,
-    maxAudioBitrate,
-    maxVideoBitrate);
+    preferredAudioCodecs,
+    preferredVideoCodecs);
 
   connectOrDisconnect.value = 'Disconnect from Room';
 }
@@ -125,58 +118,41 @@ function getTracks(participant) {
 }
 
 /**
- * Set up the bitrate graph for audio or video media.
+ * Hide the codec used to encode the media of a particular kind in a Room.
  */
-function setupBitrateGraph(kind, containerId, canvasId) {
-  const bitrateSeries = new DataSeries();
-  const bitrateGraph = new GraphView(containerId, canvasId);
-
-  bitrateGraph.graphDiv_.style.display = 'none';
-  return function startBitrateGraph(room, intervalMs) {
-    let bytesReceivedPrev = 0;
-    let timestampPrev = Date.now();
-    const interval = setInterval(async function() {
-      if (!room) {
-        clearInterval(interval);
-        return;
-      }
-      const stats = await room.getStats();
-      const remoteTrackStats = kind === 'audio'
-        ? stats[0].remoteAudioTrackStats[0]
-        : stats[0].remoteVideoTrackStats[0]
-      const bytesReceived = remoteTrackStats.bytesReceived;
-      const timestamp = remoteTrackStats.timestamp;
-      const bitrate = Math.round((bytesReceivedPrev - bytesReceived) * 8 / (timestampPrev - timestamp));
-
-      bitrateSeries.addPoint(timestamp, bitrate);
-      bitrateGraph.setDataSeries([bitrateSeries]);
-      bitrateGraph.updateEndDate();
-      bytesReceivedPrev = bytesReceived;
-      timestampPrev = timestamp;
-    }, intervalMs);
-
-    bitrateGraph.graphDiv_.style.display = '';
-    return function stop() {
-      clearInterval(interval);
-      bitrateGraph.graphDiv_.style.display = 'none';
-    };
-  };
+function hideAppliedCodec(kind) {
+  const selectedCodec = kind === 'audio'
+    ? selectedAudioCodec
+    : selectedVideoCodec;
+  selectedCodec.parentNode.classList.add('hidden');
 }
 
 /**
- * Update bandwidth constraints in the Room.
+ * Show the codec used to encode the media of a particular kind in a Room.
  */
-function updateBandwidthParametersInRoom() {
-  if (!room) {
-    return;
-  }
-  const maxAudioBitrate = audioBitrateSelector.value
-    ? Number(audioBitrateSelector.value)
-    : null;
-  const maxVideoBitrate = videoBitrateSelector.value
-    ? Number(videoBitrateSelector.value)
-    : null;
-  updateBandwidthConstraints(room, maxAudioBitrate, maxVideoBitrate);
+async function showAppliedCodec(room, kind) {
+  // Codec stats are not immediately populated. So we wait
+  // a little while until they are.
+  await wait(3000);
+
+  const stats = await room.getStats();
+  const remoteStats = kind === 'audio'
+    ? stats[0].remoteAudioTrackStats[0]
+    : stats[0].remoteVideoTrackStats[0];
+  const selectedCodec = kind === 'audio'
+    ? selectedAudioCodec
+    : selectedVideoCodec;
+  selectedCodec.innerText = remoteStats.codec || 'Unknown';
+  selectedCodec.parentNode.classList.remove('hidden');
+}
+
+/**
+ * Wait for a given amount of time (ms).
+ */
+function wait(ms) {
+  return new Promise(function(resolve) {
+    setTimeout(resolve, ms);
+  });
 }
 
 (async function() {
@@ -185,23 +161,15 @@ function updateBandwidthParametersInRoom() {
   const pre = document.querySelector('pre.language-javascript');
   pre.innerHTML = Prism.highlight(snippet, Prism.languages.javascript);
 
-  // Set listeners to the bandwidth selectors.
-  audioBitrateSelector.onchange = updateBandwidthParametersInRoom;
-  videoBitrateSelector.onchange = updateBandwidthParametersInRoom;
-
   // Set listener to the connect or disconnect button.
   connectOrDisconnect.onclick = connectToOrDisconnectFromRoom;
-
-  // Set bitrate graphs.
-  startAudioBitrateGraph = setupBitrateGraph('audio', 'audiobitrategraph', 'audiobitratecanvas');
-  startVideoBitrateGraph = setupBitrateGraph('video', 'videobitrategraph', 'videobitratecanvas');
 
   // Get the credentials to connect to the Room.
   const creds = await getRoomCredentials();
 
   // Connect to a random Room with no media. This Participant will
   // display the media of the second Participant that will enter
-  // the Room with bandwidth constraints.
+  // the Room with preferred codecs.
   const someRoom = await Video.connect(creds.token, { tracks: [] });
 
   // Disconnect from the Room on page unload.
@@ -217,21 +185,20 @@ function updateBandwidthParametersInRoom() {
   // media should join.
   roomName = someRoom.name;
 
-  // Attach the newly subscribed Track to the DOM and start the bitrate graph.
+  // Attach the newly subscribed Track to the DOM.
   someRoom.on('trackSubscribed', attachTrack.bind(
     null,
     audioPreview,
     videoPreview,
-    startAudioBitrateGraph.bind(null, someRoom),
-    startVideoBitrateGraph.bind(null, someRoom)));
+    showAppliedCodec.bind(null, someRoom)));
 
-  // Detach the unsubscribed Track from the DOM and stop the bitrate graph.
+  // Detach the unsubscribed Track from the DOM.
   someRoom.on('trackUnsubscribed', detachTrack.bind(
     null,
     audioPreview,
     videoPreview));
 
-  // Detach Participant's Tracks and stop the bitrate graphs upon disconnect.
+  // Detach Participant's Tracks upon disconnect.
   someRoom.on('participantDisconnected', function(participant) {
     getTracks(participant).forEach(detachTrack.bind(
       null,
